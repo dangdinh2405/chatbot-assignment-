@@ -104,11 +104,11 @@ export const useChat = () => {
         throw new Error("No response body");
       }
 
-      // Stream the response
+      // Stream the response (robust SSE parsing)
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let assistantContent = "";
-      
+
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
@@ -118,37 +118,101 @@ export const useChat = () => {
 
       setMessages((prev) => [...prev, assistantMessage]);
 
+      // helper: recursively collect strings from various possible response shapes
+      function collectText(obj: any): string {
+        if (obj == null) return "";
+        if (typeof obj === "string") return obj;
+        if (typeof obj === "number" || typeof obj === "boolean") return String(obj);
+        if (Array.isArray(obj)) return obj.map(collectText).join("");
+        if (typeof obj === "object") {
+          // common quick picks
+          if (typeof obj === "object" && typeof obj.text === "string") return obj.text;
+          if (obj.delta && typeof obj.delta.content === "string") return obj.delta.content;
+          if (obj.choices && Array.isArray(obj.choices)) {
+            for (const c of obj.choices) {
+              // try delta.content or message/content parts
+              if (c.delta && typeof c.delta.content === "string") return c.delta.content;
+              if (c.message && c.message.content) return collectText(c.message.content);
+              if (c.text) return String(c.text);
+            }
+          }
+          if (obj.output && obj.output.content) return collectText(obj.output.content);
+          if (obj.candidates && Array.isArray(obj.candidates)) return obj.candidates.map(collectText).join("");
+          if (obj.parts && Array.isArray(obj.parts)) return obj.parts.map((p: any) => p.text ?? "").join("");
+          // fallback: traverse keys
+          let out = "";
+          for (const k of Object.keys(obj)) {
+            out += collectText(obj[k]);
+          }
+          return out;
+        }
+        return "";
+      }
+
       let buffer = "";
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
 
-        for (const line of lines) {
-          if (!line.trim() || line.startsWith(":")) continue;
-          if (!line.startsWith("data: ")) continue;
+        // SSE events are separated by a blank line -> split by \n\n (handle \r\n too)
+        const events = buffer.split(/\r?\n\r?\n/);
+        buffer = events.pop() || "";
 
-          const data = line.slice(6).trim();
-          if (data === "[DONE]") continue;
+        for (const ev of events) {
+          if (!ev.trim()) continue;
 
+          // collect data: lines (can be multiple data: lines per event)
+          const dataLines = ev
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter((l) => l.startsWith("data:"))
+            .map((l) => l.replace(/^data:\s?/, ""));
+
+          if (dataLines.length === 0) continue;
+
+          const dataStr = dataLines.join("\n").trim();
+          if (!dataStr || dataStr === "[DONE]") continue;
+
+          let extracted = "";
           try {
-            const parsed = JSON.parse(data);
-            const delta = parsed.choices?.[0]?.delta?.content;
-            if (delta) {
-              assistantContent += delta;
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === assistantMessage.id
-                    ? { ...msg, content: assistantContent }
-                    : msg
-                )
-              );
-            }
+            const parsed = JSON.parse(dataStr);
+            extracted = collectText(parsed).trim();
           } catch (e) {
-            console.error("Failed to parse SSE data:", e);
+            // not JSON, treat as plain text
+            extracted = dataStr;
+          }
+
+          if (!extracted) continue;
+
+          assistantContent += extracted;
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessage.id ? { ...msg, content: assistantContent } : msg
+            )
+          );
+        }
+      }
+
+      // flush any remaining buffer (in case no trailing double newline)
+      if (buffer.trim()) {
+        const dataStr = buffer.trim();
+        if (dataStr !== "[DONE]") {
+          let extracted = "";
+          try {
+            const parsed = JSON.parse(dataStr);
+            extracted = collectText(parsed).trim();
+          } catch {
+            extracted = dataStr;
+          }
+          if (extracted) {
+            assistantContent += extracted;
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessage.id ? { ...msg, content: assistantContent } : msg
+              )
+            );
           }
         }
       }
