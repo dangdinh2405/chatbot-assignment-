@@ -59,7 +59,8 @@ Deno.serve(async (req) => {
 
         const ext = mime.split("/")[1].split("+")[0] || "png";
         const filename = `${crypto.randomUUID()}.${ext}`;
-        const uploadUrl = `${SUPABASE_URL}/storage/v1/object/images/${filename}`;
+        const BUCKET = Deno.env.get("SUPABASE_IMAGE_BUCKET") || "images"; // allow override
+        const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${filename}`;
 
         const res = await fetch(uploadUrl, {
           method: "PUT",
@@ -77,7 +78,7 @@ Deno.serve(async (req) => {
         }
 
         // public URL for objects in public bucket "images"
-        return `${SUPABASE_URL}/storage/v1/object/public/images/${filename}`;
+        return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${filename}`;
       } catch (e) {
         console.error("uploadImageToSupabase error:", e);
         return null;
@@ -101,15 +102,9 @@ Deno.serve(async (req) => {
     if (imageData) {
       const uploaded = await uploadImageToSupabase(imageData);
       if (uploaded) {
-        effectiveImageUrl = uploaded;
-        console.log("Uploaded image to Supabase:", uploaded);
-      } else {
-        // fallback: send original data URL (may or may not be usable by Gemini)
-        effectiveImageUrl = imageData;
-        console.log("Using original data URL for image (no upload)");
-      }
+        console.log("Uploaded image to Supabase:", uploaded);}
+      effectiveImageUrl = imageData;
 
-      // attach image to last user message (if exists)
       if (apiMessages.length > 0) {
         const lastIdx = apiMessages.length - 1;
         const last = apiMessages[lastIdx];
@@ -118,7 +113,7 @@ Deno.serve(async (req) => {
             role: "user",
             content: [
               { type: "text", text: typeof last.content === "string" ? last.content : "" },
-              { type: "image_url", image_url: { url: imageData } },
+              { type: "image_url", image_url: { url: effectiveImageUrl } }, // use effective URL (uploaded or data URL)
             ],
           };
         }
@@ -146,7 +141,17 @@ Deno.serve(async (req) => {
                   const imageUrl = typeof part.image_url === "string"
                     ? part.image_url
                     : part.image_url?.url || "";
-                  return { image: { imageUri: imageUrl } };
+
+                  // If it's a data URL, convert to inline_data; otherwise send image_url
+                  if (typeof imageUrl === "string" && imageUrl.startsWith("data:")) {
+                    const match = imageUrl.match(/^data:(image\/[a-zA-Z.+-]+);base64,(.*)$/);
+                    if (match) {
+                      return { inline_data: { mime_type: match[1], data: match[2] } };
+                    }
+                    return { text: "" };
+                  } else {
+                    return { image_url: { url: imageUrl } };
+                  }
                 }
                 return { text: "" };
               });
