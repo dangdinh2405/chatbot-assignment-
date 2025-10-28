@@ -54,6 +54,23 @@ export const ChatInterface = () => {
         });
       }
 
+      // First, update old conversations without user_id that have messages from this user
+      const { data: oldMessages } = await supabase
+        .from("messages")
+        .select("conversation_id")
+        .eq("user_id", uId);
+
+      if (oldMessages && oldMessages.length > 0) {
+        const conversationIds = [...new Set(oldMessages.map(m => m.conversation_id))];
+        
+        // Update these conversations to have the correct user_id
+        await supabase
+          .from("conversations")
+          .update({ user_id: uId })
+          .in("id", conversationIds)
+          .is("user_id", null);
+      }
+
       // Load user's conversations
       const { data: userConvs, error } = await supabase
         .from("conversations")
