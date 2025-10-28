@@ -115,7 +115,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log("Making request to Lovable AI with", apiMessages.length, "messages");
+    console.log("Making request to Chat AI with", apiMessages.length, "messages");
 
     const contents = [
       {
