@@ -2,10 +2,38 @@ import { useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { supabase } from "@/integrations/supabase/client";
 
 interface UserSetupProps {
   onUserSetup: (userId: string, userName: string) => void;
 }
+
+export const getOrCreateUserByName = async (username: string) => {
+  const name = username.trim();
+  if (!name) throw new Error("Tên không được để trống");
+  const { data: existing, error: findErr } = await supabase
+    .from("chat_users")
+    .select("id")
+    .ilike("name", name)
+    .maybeSingle();
+
+  if (findErr) throw findErr;
+
+  if (existing?.id) {
+    return existing.id;
+  }
+
+  const newId = crypto.randomUUID();
+  const { data: newUser, error: insertErr } = await supabase
+    .from("chat_users")
+    .insert({ id: newId, name })
+    .select("id")
+    .single();
+
+  if (insertErr) throw insertErr;
+
+  return newUser.id;
+};
 
 export const UserSetup = ({ onUserSetup }: UserSetupProps) => {
   const [name, setName] = useState("");
@@ -17,7 +45,7 @@ export const UserSetup = ({ onUserSetup }: UserSetupProps) => {
 
     setIsLoading(true);
     try {
-      const userId = crypto.randomUUID();
+      const userId = await getOrCreateUserByName(name);
       localStorage.setItem("chatUserId", userId);
       localStorage.setItem("chatUserName", name.trim());
       onUserSetup(userId, name.trim());

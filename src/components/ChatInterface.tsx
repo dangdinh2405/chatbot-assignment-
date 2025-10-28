@@ -38,53 +38,22 @@ export const ChatInterface = () => {
     }
   }, []);
 
+
+
   const loadUserConversations = async (uId: string) => {
     try {
-      // Create or get user in database first
-      const { data: existingUser } = await supabase
-        .from("chat_users")
-        .select("id")
-        .eq("id", uId)
-        .maybeSingle();
-
-      if (!existingUser) {
-        await supabase.from("chat_users").insert({
-          id: uId,
-          name: localStorage.getItem("chatUserName") || "Anonymous",
-        });
-      }
-
-      // First, update old conversations without user_id that have messages from this user
-      const { data: oldMessages } = await supabase
-        .from("messages")
-        .select("conversation_id")
-        .eq("user_id", uId);
-
-      if (oldMessages && oldMessages.length > 0) {
-        const conversationIds = [...new Set(oldMessages.map(m => m.conversation_id))];
-        
-        // Update these conversations to have the correct user_id
-        await supabase
-          .from("conversations")
-          .update({ user_id: uId })
-          .in("id", conversationIds)
-          .is("user_id", null);
-      }
-
-      // Load user's conversations
-      const { data: userConvs, error } = await supabase
+      const { data: userConvs, error: convErr } = await supabase
         .from("conversations")
         .select("*")
         .eq("user_id", uId)
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
+      if (convErr) throw convErr;
 
       if (userConvs && userConvs.length > 0) {
         setConversations(userConvs);
         setConversationId(userConvs[0].id);
       } else {
-        // Create first conversation
         await createNewConversation(uId);
       }
     } catch (error) {
@@ -101,9 +70,9 @@ export const ChatInterface = () => {
     try {
       const { data: newConv, error } = await supabase
         .from("conversations")
-        .insert({ 
+        .insert({
           title: `Cuộc trò chuyện ${new Date().toLocaleString("vi-VN")}`,
-          user_id: uId
+          user_id: uId,
         })
         .select()
         .single();
@@ -112,10 +81,8 @@ export const ChatInterface = () => {
 
       setConversations((prev) => [newConv, ...prev]);
       setConversationId(newConv.id);
-      
-      toast({
-        title: "Đã tạo cuộc trò chuyện mới",
-      });
+
+      toast({ title: "Đã tạo cuộc trò chuyện mới" });
     } catch (error) {
       console.error("Error creating conversation:", error);
       toast({
