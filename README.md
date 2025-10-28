@@ -2,7 +2,7 @@
 
 ## Project info
 
-**URL**: https://lovable.dev/projects/90f5469a-0c81-4961-ba14-1eea9223454f
+**URL**: Vercel
 
 Node.js & npm installed - [install with nvm](https://nodejs.org/en/download)
 
@@ -48,4 +48,4 @@ supabase functions deploy
 - Supabase
 
 ## Video demo
-Video
+[Video](https://drive.google.com/file/d/1txv6i-rQtU9EKYEZBzZ3sUSHbYlAhrMg/view?usp=sharing)
