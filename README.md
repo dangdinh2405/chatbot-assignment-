@@ -6,9 +6,12 @@
 
 Node.js & npm installed - [install with nvm](https://nodejs.org/en/download)
 
+Supabase installed
+
 Follow these steps to run local:
 
 ```sh
+Frontend
 # Step 1: Clone the repository using the project's Git URL.
 git clone https://github.com/dangdinh2405/chatbot-assignment-.git
 
@@ -25,6 +28,14 @@ npm i
 
 # Step 4: Start the development server with auto-reloading and an instant preview.
 npm run dev
+```
+
+```sh
+Backend
+# Step 1: Navigate to the project directory.
+cd chatbot-assignment-
+cd supabase
+supabase functions deploy
 ```
 
 ## This project is built with:
