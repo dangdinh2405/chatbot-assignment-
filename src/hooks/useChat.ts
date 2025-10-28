@@ -1,11 +1,58 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import type { Message } from "@/components/ChatInterface";
 
-export const useChat = () => {
+export const useChat = (conversationId?: string, currentUserId?: string) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+
+  // Load conversation history
+  useEffect(() => {
+    if (conversationId) {
+      loadConversationHistory(conversationId);
+    }
+  }, [conversationId]);
+
+  const loadConversationHistory = async (convId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("messages")
+        .select(`
+          *,
+          chat_users (
+            id,
+            name
+          )
+        `)
+        .eq("conversation_id", convId)
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+
+      if (data) {
+        const loadedMessages: Message[] = data.map((msg: any) => ({
+          id: msg.id,
+          role: msg.role as "user" | "assistant",
+          content: msg.content,
+          timestamp: new Date(msg.created_at),
+          imageUrl: msg.image_url || undefined,
+          csvData: msg.csv_data || undefined,
+          csvFileName: msg.csv_filename || undefined,
+          userName: msg.chat_users?.name || undefined,
+        }));
+        setMessages(loadedMessages);
+      }
+    } catch (error) {
+      console.error("Error loading conversation:", error);
+      toast({
+        title: "Lỗi",
+        description: "Không thể tải lịch sử trò chuyện",
+        variant: "destructive",
+      });
+    }
+  };
 
   const sendMessage = async (
     content: string,
@@ -55,6 +102,7 @@ export const useChat = () => {
       }
 
       // Create user message
+      const userName = localStorage.getItem("chatUserName") || "Anonymous";
       const userMessage: Message = {
         id: crypto.randomUUID(),
         role: "user",
@@ -63,9 +111,27 @@ export const useChat = () => {
         imageUrl: imageData,
         csvData,
         csvFileName,
+        userName,
       };
 
       setMessages((prev) => [...prev, userMessage]);
+
+      // Save user message to database
+      if (conversationId && currentUserId) {
+        try {
+          await supabase.from("messages").insert({
+            conversation_id: conversationId,
+            user_id: currentUserId,
+            role: "user",
+            content,
+            image_url: imageData,
+            csv_data: csvData,
+            csv_filename: csvFileName,
+          });
+        } catch (err) {
+          console.error("Error saving user message:", err);
+        }
+      }
 
       // Prepare messages for API
       const apiMessages = messages.map((msg) => ({
@@ -117,6 +183,8 @@ export const useChat = () => {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+
+      let assistantMessageId = assistantMessage.id;
 
       // helper: recursively collect strings from various possible response shapes
       function collectText(obj: any): string {
@@ -214,6 +282,21 @@ export const useChat = () => {
               )
             );
           }
+        }
+      }
+
+      // Save assistant message to database
+      if (conversationId && assistantContent) {
+        try {
+          await supabase.from("messages").insert({
+            id: assistantMessageId,
+            conversation_id: conversationId,
+            user_id: null,
+            role: "assistant",
+            content: assistantContent,
+          });
+        } catch (err) {
+          console.error("Error saving assistant message:", err);
         }
       }
 

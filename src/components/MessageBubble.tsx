@@ -27,6 +27,11 @@ export const MessageBubble = ({ message }: MessageBubbleProps) => {
       </div>
 
       <div className={`flex-1 max-w-[80%] ${isUser ? "items-end" : "items-start"} flex flex-col`}>
+        {message.userName && (
+          <span className="text-xs font-medium text-muted-foreground mb-1 px-2">
+            {message.userName}
+          </span>
+        )}
         <div
           className={`rounded-2xl px-4 py-3 shadow-sm ${
             isUser

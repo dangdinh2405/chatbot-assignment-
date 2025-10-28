@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
+import { UserSetup } from "./UserSetup";
 import { useChat } from "@/hooks/useChat";
+import { supabase } from "@/integrations/supabase/client";
 
 export interface Message {
   id: string;
@@ -11,10 +13,77 @@ export interface Message {
   imageUrl?: string;
   csvData?: string;
   csvFileName?: string;
+  userName?: string;
 }
 
 export const ChatInterface = () => {
-  const { messages, isLoading, sendMessage } = useChat();
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const storedUserId = localStorage.getItem("chatUserId");
+    const storedUserName = localStorage.getItem("chatUserName");
+    
+    if (storedUserId && storedUserName) {
+      setUserId(storedUserId);
+      setUserName(storedUserName);
+      initializeConversation(storedUserId);
+    }
+  }, []);
+
+  const initializeConversation = async (uId: string) => {
+    try {
+      // Create or get existing conversation
+      const { data: existingConv } = await supabase
+        .from("conversations")
+        .select("id")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingConv) {
+        setConversationId(existingConv.id);
+      } else {
+        const { data: newConv, error } = await supabase
+          .from("conversations")
+          .insert({ title: "Cuộc trò chuyện mới" })
+          .select()
+          .single();
+
+        if (error) throw error;
+        setConversationId(newConv.id);
+      }
+
+      // Create or get user in database
+      const { data: existingUser } = await supabase
+        .from("chat_users")
+        .select("id")
+        .eq("id", uId)
+        .maybeSingle();
+
+      if (!existingUser) {
+        await supabase.from("chat_users").insert({
+          id: uId,
+          name: localStorage.getItem("chatUserName") || "Anonymous",
+        });
+      }
+    } catch (error) {
+      console.error("Error initializing conversation:", error);
+    }
+  };
+
+  const handleUserSetup = async (uId: string, uName: string) => {
+    setUserId(uId);
+    setUserName(uName);
+    await initializeConversation(uId);
+  };
+
+  const { messages, isLoading, sendMessage } = useChat(conversationId || undefined, userId || undefined);
+
+  if (!userId || !userName) {
+    return <UserSetup onUserSetup={handleUserSetup} />;
+  }
 
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-background to-secondary/20">
