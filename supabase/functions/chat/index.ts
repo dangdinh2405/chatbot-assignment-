@@ -35,7 +35,6 @@ Deno.serve(async (req) => {
       hasCSV: !!csvData,
     });
 
-    // Helper: upload data URL image to Supabase Storage (bucket name: "images", public)
     async function uploadImageToSupabase(dataUrl: string): Promise<string | null> {
       try {
         const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -59,7 +58,7 @@ Deno.serve(async (req) => {
 
         const ext = mime.split("/")[1].split("+")[0] || "png";
         const filename = `${crypto.randomUUID()}.${ext}`;
-        const BUCKET = Deno.env.get("SUPABASE_IMAGE_BUCKET") || "images"; // allow override
+        const BUCKET = Deno.env.get("SUPABASE_IMAGE_BUCKET") || "images";
         const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${filename}`;
 
         const res = await fetch(uploadUrl, {
@@ -77,7 +76,6 @@ Deno.serve(async (req) => {
           return null;
         }
 
-        // public URL for objects in public bucket "images"
         return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${filename}`;
       } catch (e) {
         console.error("uploadImageToSupabase error:", e);
@@ -85,10 +83,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Prepare the messages for the API
     const apiMessages: Message[] = [...messages];
 
-    // If there's CSV data, add context to the system message
     if (csvData) {
       const systemMessage = {
         role: "assistant" as const,
@@ -97,7 +93,6 @@ Deno.serve(async (req) => {
       apiMessages.unshift(systemMessage);
     }
 
-    // If there's an image dataURL, try to upload and replace with public URL
     let effectiveImageUrl: string | undefined = undefined;
     if (imageData) {
       const uploaded = await uploadImageToSupabase(imageData);
@@ -113,7 +108,7 @@ Deno.serve(async (req) => {
             role: "user",
             content: [
               { type: "text", text: typeof last.content === "string" ? last.content : "" },
-              { type: "image_url", image_url: { url: effectiveImageUrl } }, // use effective URL (uploaded or data URL)
+              { type: "image_url", image_url: { url: effectiveImageUrl } },
             ],
           };
         }
@@ -122,7 +117,6 @@ Deno.serve(async (req) => {
 
     console.log("Making request to Lovable AI with", apiMessages.length, "messages");
 
-    // Build contents for Gemini: preserve image parts as image entries so model can fetch
     const contents = [
       {
         role: "user",
@@ -142,7 +136,6 @@ Deno.serve(async (req) => {
                     ? part.image_url
                     : part.image_url?.url || "";
 
-                  // If it's a data URL, convert to inline_data; otherwise send image_url
                   if (typeof imageUrl === "string" && imageUrl.startsWith("data:")) {
                     const match = imageUrl.match(/^data:(image\/[a-zA-Z.+-]+);base64,(.*)$/);
                     if (match) {
@@ -199,7 +192,6 @@ Deno.serve(async (req) => {
     const upstream = response.body;
     const contentType = response.headers.get("content-type") || "";
 
-    // helper: walk object and collect text pieces commonly used by generative language responses
     function extractText(obj: any): string {
       if (obj == null) return "";
       if (typeof obj === "string") return obj;
@@ -250,7 +242,6 @@ Deno.serve(async (req) => {
       return "";
     }
 
-    // sanitize extracted text from backend metadata/id tokens
     function sanitizeText(s: string): string {
       if (!s) return "";
       s = s.replace(/model[^ \n\r]*/gi, "");
@@ -261,7 +252,6 @@ Deno.serve(async (req) => {
       return s;
     }
 
-    // Build an SSE ReadableStream from either a streamed upstream or a complete JSON body
     const sseStream = new ReadableStream({
       async start(controller) {
         try {
