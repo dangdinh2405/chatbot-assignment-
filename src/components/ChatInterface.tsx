@@ -2,8 +2,12 @@ import { useState, useEffect } from "react";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
 import { UserSetup } from "./UserSetup";
+import { ConversationList } from "./ConversationList";
 import { useChat } from "@/hooks/useChat";
 import { supabase } from "@/integrations/supabase/client";
+import { Button } from "./ui/button";
+import { LogOut } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export interface Message {
   id: string;
@@ -20,6 +24,8 @@ export const ChatInterface = () => {
   const [userId, setUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<any[]>([]);
+  const { toast } = useToast();
 
   useEffect(() => {
     const storedUserId = localStorage.getItem("chatUserId");
@@ -28,34 +34,13 @@ export const ChatInterface = () => {
     if (storedUserId && storedUserName) {
       setUserId(storedUserId);
       setUserName(storedUserName);
-      initializeConversation(storedUserId);
+      loadUserConversations(storedUserId);
     }
   }, []);
 
-  const initializeConversation = async (uId: string) => {
+  const loadUserConversations = async (uId: string) => {
     try {
-      // Create or get existing conversation
-      const { data: existingConv } = await supabase
-        .from("conversations")
-        .select("id")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (existingConv) {
-        setConversationId(existingConv.id);
-      } else {
-        const { data: newConv, error } = await supabase
-          .from("conversations")
-          .insert({ title: "Cuộc trò chuyện mới" })
-          .select()
-          .single();
-
-        if (error) throw error;
-        setConversationId(newConv.id);
-      }
-
-      // Create or get user in database
+      // Create or get user in database first
       const { data: existingUser } = await supabase
         .from("chat_users")
         .select("id")
@@ -68,15 +53,88 @@ export const ChatInterface = () => {
           name: localStorage.getItem("chatUserName") || "Anonymous",
         });
       }
+
+      // Load user's conversations
+      const { data: userConvs, error } = await supabase
+        .from("conversations")
+        .select("*")
+        .eq("user_id", uId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      if (userConvs && userConvs.length > 0) {
+        setConversations(userConvs);
+        setConversationId(userConvs[0].id);
+      } else {
+        // Create first conversation
+        await createNewConversation(uId);
+      }
     } catch (error) {
-      console.error("Error initializing conversation:", error);
+      console.error("Error loading conversations:", error);
+      toast({
+        title: "Lỗi",
+        description: "Không thể tải danh sách cuộc trò chuyện",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const createNewConversation = async (uId: string) => {
+    try {
+      const { data: newConv, error } = await supabase
+        .from("conversations")
+        .insert({ 
+          title: `Cuộc trò chuyện ${new Date().toLocaleString("vi-VN")}`,
+          user_id: uId
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setConversations((prev) => [newConv, ...prev]);
+      setConversationId(newConv.id);
+      
+      toast({
+        title: "Đã tạo cuộc trò chuyện mới",
+      });
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+      toast({
+        title: "Lỗi",
+        description: "Không thể tạo cuộc trò chuyện mới",
+        variant: "destructive",
+      });
     }
   };
 
   const handleUserSetup = async (uId: string, uName: string) => {
     setUserId(uId);
     setUserName(uName);
-    await initializeConversation(uId);
+    await loadUserConversations(uId);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("chatUserId");
+    localStorage.removeItem("chatUserName");
+    setUserId(null);
+    setUserName(null);
+    setConversationId(null);
+    setConversations([]);
+    toast({
+      title: "Đã đăng xuất",
+    });
+  };
+
+  const handleNewConversation = () => {
+    if (userId) {
+      createNewConversation(userId);
+    }
+  };
+
+  const handleSelectConversation = (id: string) => {
+    setConversationId(id);
   };
 
   const { messages, isLoading, sendMessage } = useChat(conversationId || undefined, userId || undefined);
@@ -86,27 +144,44 @@ export const ChatInterface = () => {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-background to-secondary/20">
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            Multi-Modal Chat
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Chat with text, images, and CSV data
-          </p>
-        </div>
-      </header>
+    <div className="flex h-screen bg-gradient-to-br from-background to-secondary/20">
+      <div className="w-64 flex-shrink-0">
+        <ConversationList
+          conversations={conversations}
+          currentConversationId={conversationId}
+          onSelectConversation={handleSelectConversation}
+          onNewConversation={handleNewConversation}
+        />
+      </div>
 
-      <main className="flex-1 overflow-hidden">
-        <MessageList messages={messages} isLoading={isLoading} />
-      </main>
+      <div className="flex-1 flex flex-col">
+        <header className="border-b border-border bg-card/50 backdrop-blur-sm">
+          <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+            <div>
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                Multi-Modal Chat
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1">
+                Xin chào, {userName}
+              </p>
+            </div>
+            <Button variant="outline" onClick={handleLogout}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Đăng xuất
+            </Button>
+          </div>
+        </header>
 
-      <footer className="border-t border-border bg-card/50 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-4">
-          <ChatInput onSendMessage={sendMessage} isLoading={isLoading} />
-        </div>
-      </footer>
+        <main className="flex-1 overflow-hidden">
+          <MessageList messages={messages} isLoading={isLoading} />
+        </main>
+
+        <footer className="border-t border-border bg-card/50 backdrop-blur-sm">
+          <div className="container mx-auto px-4 py-4">
+            <ChatInput onSendMessage={sendMessage} isLoading={isLoading} />
+          </div>
+        </footer>
+      </div>
     </div>
   );
 };
