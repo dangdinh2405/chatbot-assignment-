@@ -143,7 +143,7 @@ export const ChatInterface = () => {
           <div className="container mx-auto px-4 py-4 flex justify-between items-center">
             <div>
               <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                Chat Assignment
+                Chatbot
               </h1>
               <p className="text-sm text-muted-foreground mt-1">
                 Xin chào, {userName}

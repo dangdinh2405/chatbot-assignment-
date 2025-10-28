@@ -61,7 +61,7 @@ export const UserSetup = ({ onUserSetup }: UserSetupProps) => {
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            Chào mừng đến Multi-Modal Chat
+            Chào mừng đến Chatbot
           </CardTitle>
           <CardDescription>
             Nhập tên của bạn để bắt đầu trò chuyện
